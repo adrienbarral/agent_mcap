@@ -1,0 +1,2 @@
+[workspace]
+members = ["agent_mcap", "test_app"]
