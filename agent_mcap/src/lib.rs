@@ -5,9 +5,9 @@ use mcap::{Channel, Writer, Schema, records:: MessageHeader};
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use tokio::{sync::{watch::{Sender, Receiver, channel}, Mutex}, time::sleep};
+use tokio::{sync::{watch::{Sender, Receiver, channel}, Mutex}};
 
-struct Context {
+pub struct Context {
     writer: Arc<Mutex<Writer<'static, BufWriter<std::fs::File>>>>
 }
 
@@ -74,8 +74,8 @@ impl Drop for Context {
 }
 
 pub struct Topic<T> {
-    tx: Sender<Option<T>>,
-    rx: Receiver<Option<T>>    
+    pub tx: Sender<Option<T>>,
+    pub rx: Receiver<Option<T>>    
 }
 
 impl<T> Topic<T> {
@@ -88,7 +88,7 @@ impl<T> Topic<T> {
 }
 
 #[async_trait::async_trait]
-trait INode 
+pub trait INode 
 where Self: Sized
 {
     async fn new(name: &str, context: &mut Context) -> Result<Self>;

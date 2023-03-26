@@ -591,6 +591,14 @@ name = "test_app"
 version = "0.1.0"
 dependencies = [
  "agent_mcap",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "mcap",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
