@@ -1,44 +1,15 @@
-use std::{time::Duration};
+mod messages;
+mod autopilot;
+mod gps_node;
+mod general_state_controller;
 
+use gps_node::GPSNode;
 use anyhow::Result;
-use schemars::JsonSchema;
-use serde::Serialize;
-use agent_mcap::{Topic, Context, INode};
+use agent_mcap::{TopicSPMC, Context};
 
-use tokio::time::sleep;
 
-#[derive(Serialize, Clone, Copy, JsonSchema)]
-struct PositionMsg{
-    latitude: f64,
-    longitude: f64,
-    heading: f32,
-
-}
-
-struct GPSNode {
-    name: String,
-    gps_topic: Topic<PositionMsg>
-}
-
-#[async_trait::async_trait]
-impl INode for GPSNode {
-    async fn new(name: &str, context: &mut Context) -> Result<Self> {
-        Ok(GPSNode { name: String::from(name),
-        gps_topic: context.advertise("gps_pos").await?
-        })
-    }
-    async fn task(&mut self){
-        loop{
-            sleep(Duration::from_millis(100)).await;
-            let _ = self.gps_topic.tx.send(Some(
-                PositionMsg{latitude: 43.000, longitude: 6.000, heading: 10.0}
-            ));
-        }
-    }
-    // TODO : Implémenter drop pour interrompre la tâche quand on détruit le Node...
-    // Peut être pas un trait du coup : https://stackoverflow.com/questions/71541765/rust-async-drop/71741467#71741467
-}
-
+// TODO créer un noeud qui va "écouter" sur de l'UDP pour faire l'interface avec un système tiers (genre IHM). C'est avec lui qu'on donne les ordres de changement
+// d'états... A voir si on ne met pas cette fonction dans le General State Controller...
 #[tokio::main]
 async fn main() -> Result<()>{
     let mut context = Context::new()?;

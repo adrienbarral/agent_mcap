@@ -1,14 +1,14 @@
-use std::{time::Duration, io::BufWriter, collections::BTreeMap, borrow::Cow, sync::Arc};
-
+use std::{io::BufWriter, sync::Arc, borrow::Cow, collections::BTreeMap};
 use anyhow::Result;
-use mcap::{Channel, Writer, Schema, records:: MessageHeader};
+use log::error;
+use mcap::{Writer, Schema, Channel, records::MessageHeader};
+
 use schemars::JsonSchema;
 use serde::Serialize;
-
-use tokio::{sync::{watch::{Sender, Receiver, channel}, Mutex}};
+use tokio::sync::Mutex;
 
 pub struct Context {
-    writer: Arc<Mutex<Writer<'static, BufWriter<std::fs::File>>>>
+    writer: Arc<Mutex<Writer<'static, BufWriter<std::fs::File>>>>,    
 }
 
 impl Context {
@@ -17,11 +17,16 @@ impl Context {
             BufWriter::new(std::fs::File::create("out.mcap")?)
         )?));
 
-        Ok(Context {writer: out })
+        Ok(Context {
+            writer: out
+        })
     }
-    pub async fn advertise<T>(&mut self, topic_name: &str) -> Result<Topic<T>> 
-    where T: Sync + Send + Serialize + Copy + JsonSchema + 'static {
-        let (tx, mut rx) = channel(Option::<T>::None);
+
+    pub async fn advertise<T>(&mut self, topic_name: &str) -> Result<TopicSPMC<T>> 
+    where T: Sync + Send + Clone + Serialize + JsonSchema + 'static {
+        // Ici on se permet de mettre Clone dans les contraintes du type pour pouvoir avoir des structures contenant des String.
+        // Don on va clonner le message à chaque fois (ce qui est plus long qu'une copie !).
+        let (tx, rx) = tokio::sync::watch::channel(Option::<T>::None);
         // si on doit sauvegarder le topic, l'enregistrer ici...
         let mut rx2 = rx.clone();
         let jsonschema = schemars::schema_for!(T);
@@ -43,7 +48,7 @@ impl Context {
         tokio::spawn(async move {
             let mut sequence = 0_u32;
             while rx2.changed().await.is_ok() {
-                let data = *rx2.borrow();
+                let data = rx2.borrow().clone();
                 if let Some(to_save) = data {
                     match serde_json::to_string(&to_save) {
                         Ok(data_serialized) => {
@@ -61,9 +66,8 @@ impl Context {
                 }
             }
         });
-        Ok(Topic { tx: tx, rx: rx })
-    }
-    
+        Ok(TopicSPMC { name: topic_name.to_string(), tx: tx, rx: rx })
+    }       
 }
 
 impl Drop for Context {
@@ -73,24 +77,57 @@ impl Drop for Context {
     }
 }
 
-pub struct Topic<T> {
-    pub tx: Sender<Option<T>>,
-    pub rx: Receiver<Option<T>>    
+pub struct TopicSPMC<T> {
+    pub name: String,
+    pub tx: tokio::sync::watch::Sender<Option<T>>,
+    pub rx: tokio::sync::watch::Receiver<Option<T>>    
 }
 
-impl<T> Topic<T> {
-    pub fn subscribe(&self) -> Receiver<Option<T>> {
+impl<T> TopicSPMC<T> {    
+    pub fn subscribe(&self) -> tokio::sync::watch::Receiver<Option<T>> {
         self.rx.clone()
     }
-    pub fn publish(&self, value: T) -> Result<(), tokio::sync::watch::error::SendError<Option<T>>> {
-        self.tx.send(Some(value))
+    pub fn publish(&self, value: T) {
+        if let Err(_) = self.tx.send(Some(value)) {
+            error!("Channel {} closed !", self.name);
+        }
     }
 }
+
+/* 
+TODO : Créer un MPSC pour les événements qui vont être émits par tout le monde à destination du State Controller.
+pub struct TopicMPSC<T> {
+    pub name: String,
+    pub tx: tokio::sync::mpsc::Sender<Option<T>>,
+    pub rx: tokio::sync::mpsc::Receiver<Option<T>>    
+}
+
+impl<T> TopicMPSC<T> {        
+    pub fn publish(&self, value: T) {
+        if let Err(_) = self.tx.send(Some(value)) {
+            error!("Channel {} closed !", self.name);
+        }
+    }
+}
+*/
 
 #[async_trait::async_trait]
 pub trait INode 
 where Self: Sized
 {
     async fn new(name: &str, context: &mut Context) -> Result<Self>;
+    async fn subscribe_to_data(&mut self);
     async fn task(&mut self);
+}
+
+pub fn synchronize_data<T>(published: &TopicSPMC<T>, destination: Arc<Mutex<Option<T>>>)
+where T: Clone + Send + Sync + 'static {
+    // Subscribing to data :
+    let mut published_clone = published.subscribe();
+    tokio::spawn(async move {
+        while published_clone.changed().await.is_ok() {
+            let v = published_clone.borrow().clone();
+            *destination.lock().await = v;
+        }
+    });
 }
