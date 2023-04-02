@@ -22,13 +22,13 @@ impl Context {
         })
     }
 
-    pub async fn advertise<T>(&mut self, topic_name: &str) -> Result<TopicSPMC<T>> 
+    pub async fn advertise<T>(&mut self, topic_name: &str) -> Result<Topic<T>> 
     where T: Sync + Send + Clone + Serialize + JsonSchema + 'static {
         // Ici on se permet de mettre Clone dans les contraintes du type pour pouvoir avoir des structures contenant des String.
         // Don on va clonner le message à chaque fois (ce qui est plus long qu'une copie !).
-        let (tx, rx) = tokio::sync::watch::channel(Option::<T>::None);
+        let (tx, rx) = tokio::sync::broadcast::channel(10);
         // si on doit sauvegarder le topic, l'enregistrer ici...
-        let mut rx2 = rx.clone();
+        let mut rx2 = tx.subscribe();
         let jsonschema = schemars::schema_for!(T);
         let the_schema = Cow::from(serde_json::to_string_pretty(&jsonschema)?.as_bytes().to_owned());
         let schema = Arc::new(Schema {
@@ -46,27 +46,25 @@ impl Context {
         let writer = self.writer.clone();
         let channel_id = writer.lock().await.add_channel(&channel)?; 
         tokio::spawn(async move {
+            // TODO : mettre tout ça dans une fonction, gérer l'erreur possible du write.
+            // et ne rien faire si _to_save est à None.
             let mut sequence = 0_u32;
-            while rx2.changed().await.is_ok() {
-                let data = rx2.borrow().clone();
-                if let Some(to_save) = data {
-                    match serde_json::to_string(&to_save) {
-                        Ok(data_serialized) => {
-                           writer.lock().await.write_to_known_channel(&MessageHeader{
-                                channel_id: channel_id,
-                                sequence: sequence,
-                                log_time: 0,
-                                publish_time: 0
-                            }, data_serialized.as_bytes());
-                            sequence = sequence + 1;
-                        },
-                        Err(_) => {}
-                    };
-    
-                }
+            while let Ok(to_save) = rx2.recv().await {
+                match serde_json::to_string(&to_save) {
+                    Ok(data_serialized) => {
+                        writer.lock().await.write_to_known_channel(&MessageHeader{
+                            channel_id: channel_id,
+                            sequence: sequence,
+                            log_time: 0,
+                            publish_time: 0
+                        }, data_serialized.as_bytes());
+                        sequence = sequence + 1;
+                    },
+                    Err(_) => {}
+                };    
             }
         });
-        Ok(TopicSPMC { name: topic_name.to_string(), tx: tx, rx: rx })
+        Ok(Topic { name: topic_name.to_string(), tx: tx })
     }       
 }
 
@@ -77,15 +75,14 @@ impl Drop for Context {
     }
 }
 
-pub struct TopicSPMC<T> {
+pub struct Topic<T> {
     pub name: String,
-    pub tx: tokio::sync::watch::Sender<Option<T>>,
-    pub rx: tokio::sync::watch::Receiver<Option<T>>    
+    pub tx: tokio::sync::broadcast::Sender<Option<T>>,
 }
 
-impl<T> TopicSPMC<T> {    
-    pub fn subscribe(&self) -> tokio::sync::watch::Receiver<Option<T>> {
-        self.rx.clone()
+impl<T> Topic<T> {    
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Option<T>> {
+        self.tx.subscribe()
     }
     pub fn publish(&self, value: T) {
         if let Err(_) = self.tx.send(Some(value)) {
@@ -93,23 +90,6 @@ impl<T> TopicSPMC<T> {
         }
     }
 }
-
-/* 
-TODO : Créer un MPSC pour les événements qui vont être émits par tout le monde à destination du State Controller.
-pub struct TopicMPSC<T> {
-    pub name: String,
-    pub tx: tokio::sync::mpsc::Sender<Option<T>>,
-    pub rx: tokio::sync::mpsc::Receiver<Option<T>>    
-}
-
-impl<T> TopicMPSC<T> {        
-    pub fn publish(&self, value: T) {
-        if let Err(_) = self.tx.send(Some(value)) {
-            error!("Channel {} closed !", self.name);
-        }
-    }
-}
-*/
 
 #[async_trait::async_trait]
 pub trait INode 
@@ -120,13 +100,12 @@ where Self: Sized
     async fn task(&mut self);
 }
 
-pub fn synchronize_data<T>(published: &TopicSPMC<T>, destination: Arc<Mutex<Option<T>>>)
+pub fn synchronize_data<T>(published: &Topic<T>, destination: Arc<Mutex<Option<T>>>)
 where T: Clone + Send + Sync + 'static {
     // Subscribing to data :
     let mut published_clone = published.subscribe();
     tokio::spawn(async move {
-        while published_clone.changed().await.is_ok() {
-            let v = published_clone.borrow().clone();
+        while let Ok(v) = published_clone.recv().await {
             *destination.lock().await = v;
         }
     });

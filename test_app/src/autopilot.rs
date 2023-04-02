@@ -3,13 +3,13 @@ use crate::messages::{PositionMsg, ActuatorCommandsMsg};
 
 use anyhow::Result;
 use log::debug;
-use agent_mcap::{TopicSPMC, Context, synchronize_data};
+use agent_mcap::{Topic, Context, synchronize_data};
 
 use tokio::{time::sleep, sync::Mutex};
 
 pub struct Autopilot {
     name: String, 
-    actuators_command: TopicSPMC<ActuatorCommandsMsg>,
+    actuators_command: Topic<ActuatorCommandsMsg>,
     last_position: Arc<Mutex<Option<PositionMsg>>>,
     current_goal_point: Arc<Mutex<Option<PositionMsg>>>
 }
@@ -20,7 +20,7 @@ fn compute_commands(_last_position: &PositionMsg, _goal: &PositionMsg) -> Actuat
 }
 
 impl Autopilot {
-    pub async fn new(name: &str, context: &mut Context, gps_topic: &TopicSPMC<PositionMsg>, goal_point: &TopicSPMC<PositionMsg>) -> Result<Self> {
+    pub async fn new(name: &str, context: &mut Context, gps_topic: &Topic<PositionMsg>, goal_point: &Topic<PositionMsg>) -> Result<Self> {
         let res = Autopilot {
             name: String::from(name),
             actuators_command: context.advertise("actuators_command").await?,

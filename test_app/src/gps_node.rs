@@ -1,12 +1,12 @@
 use crate::messages::PositionMsg;
 use std::{time::Duration};
 use anyhow::Result;
-use agent_mcap::{TopicSPMC, Context};
+use agent_mcap::{Topic, Context};
 use tokio::{time::sleep};
 
 pub struct GPSNode {
     name: String,
-    gps_topic: TopicSPMC<PositionMsg>
+    gps_topic: Topic<PositionMsg>
 }
 
 impl GPSNode {

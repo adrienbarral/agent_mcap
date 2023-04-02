@@ -5,7 +5,7 @@ mod general_state_controller;
 
 use gps_node::GPSNode;
 use anyhow::Result;
-use agent_mcap::{TopicSPMC, Context};
+use agent_mcap::{Topic, Context};
 
 
 // TODO créer un noeud qui va "écouter" sur de l'UDP pour faire l'interface avec un système tiers (genre IHM). C'est avec lui qu'on donne les ordres de changement
