@@ -26,3 +26,17 @@ pub enum State {
 pub struct StateMsg {
     pub state: State
 }
+
+#[derive(Clone, JsonSchema, Serialize)]
+
+pub enum EventType{
+    TOO_FAR_OF_TRAJECTORY,
+    NO_GPS_DATA_RECEIVED,
+    GPS_FIX_LOST,
+}
+
+#[derive(Clone, JsonSchema, Serialize)]
+pub struct Event{
+    pub emitter: String,
+    pub event: EventType
+}

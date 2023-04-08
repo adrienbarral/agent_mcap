@@ -80,10 +80,20 @@ pub struct Topic<T> {
     pub tx: tokio::sync::broadcast::Sender<Option<T>>,
 }
 
-impl<T> Topic<T> {    
+impl<T> Topic<T> 
+where T: Sync + Send + Clone + 'static {    
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Option<T>> {
         self.tx.subscribe()
     }
+    /*pub fn add_callback<F>(&self, callback: Box<dyn FnMut(Option<T>)>){
+        let mut rx = self.tx.subscribe();
+        tokio::spawn(async move {
+            while let Ok(received) = rx.recv().await {
+                callback(received);
+            }
+        });
+
+    }*/
     pub fn publish(&self, value: T) {
         if let Err(_) = self.tx.send(Some(value)) {
             error!("Channel {} closed !", self.name);

@@ -19,6 +19,7 @@ fn compute_commands(_last_position: &PositionMsg, _goal: &PositionMsg) -> Actuat
     ActuatorCommandsMsg { rudder: 0.0f32, engine: 0.0f32 }
 }
 
+// TODO : recevoir le général state pour tout arrêter sur transition de reaching à autre chose...
 impl Autopilot {
     pub async fn new(name: &str, context: &mut Context, gps_topic: &Topic<PositionMsg>, goal_point: &Topic<PositionMsg>) -> Result<Self> {
         let res = Autopilot {
