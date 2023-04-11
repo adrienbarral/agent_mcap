@@ -1,5 +1,5 @@
 use std::{time::Duration, sync::Arc};
-use crate::messages::{PositionMsg, ActuatorCommandsMsg};
+use crate::messages::{PositionMsg, ActuatorCommandsMsg, State, StateMsg};
 
 use anyhow::Result;
 use log::debug;
@@ -11,7 +11,8 @@ pub struct Autopilot {
     name: String, 
     actuators_command: Topic<ActuatorCommandsMsg>,
     last_position: Arc<Mutex<Option<PositionMsg>>>,
-    current_goal_point: Arc<Mutex<Option<PositionMsg>>>
+    current_goal_point: Arc<Mutex<Option<PositionMsg>>>,
+    state: Arc<Mutex<Option<StateMsg>>>
 }
 
 fn compute_commands(_last_position: &PositionMsg, _goal: &PositionMsg) -> ActuatorCommandsMsg {
@@ -21,16 +22,19 @@ fn compute_commands(_last_position: &PositionMsg, _goal: &PositionMsg) -> Actuat
 
 // TODO : recevoir le général state pour tout arrêter sur transition de reaching à autre chose...
 impl Autopilot {
-    pub async fn new(name: &str, context: &mut Context, gps_topic: &Topic<PositionMsg>, goal_point: &Topic<PositionMsg>) -> Result<Self> {
+    pub async fn new(name: &str, context: &mut Context, gps_topic: &Topic<PositionMsg>, goal_point: &Topic<PositionMsg>, 
+        general_state: &Topic<StateMsg>) -> Result<Self> {
         let res = Autopilot {
             name: String::from(name),
             actuators_command: context.advertise("actuators_command").await?,
             last_position: Arc::new(Mutex::new(None)),
             current_goal_point: Arc::new(Mutex::new(None)),
+            state: Arc::new(Mutex::new(None)),
         };
 
         synchronize_data(gps_topic, res.last_position.clone());
         synchronize_data(goal_point, res.current_goal_point.clone());
+        synchronize_data(general_state, res.state.clone());
 
         Ok(res)
     }
@@ -38,6 +42,16 @@ impl Autopilot {
         loop{
             sleep(Duration::from_millis(100)).await;
             // Control loop here
+            if let Some(state) = self.state.lock().await.take() {
+                // Si on est dans un autre état que reaching on publie une consigne nulle.
+                match state.state {
+                    State::REACHING => {},
+                    _ => {
+                        self.actuators_command.publish(ActuatorCommandsMsg { rudder: 0.0, engine: 0.0 });
+                        continue
+                    }
+                };
+            }
             match (self.current_goal_point.lock().await.take(), self.check_and_get_last_position().await) {
                 (Some(gp), Some(pos)) => {
                     let command = compute_commands(&pos, &gp);

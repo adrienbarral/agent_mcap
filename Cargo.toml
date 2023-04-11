@@ -1,2 +1,2 @@
 [workspace]
-members = ["agent_mcap", "test_app"]
+members = ["agent_mcap", "test_app", "test_app_no_agent"]

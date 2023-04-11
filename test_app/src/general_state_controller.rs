@@ -27,7 +27,8 @@ impl GeneralStateController {
         });
 
         let state_controller = res.clone();
-        // Ici on voudrait lier le lifetime de res à celui du spawn...
+        
+        // Un abonement : 
         tokio::spawn(async move {
             while let Ok(received) = rx.recv().await {
                 if let Some(event) = received {

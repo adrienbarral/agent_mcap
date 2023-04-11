@@ -84,30 +84,12 @@ impl<T> Topic<T>
 where T: Sync + Send + Clone + 'static {    
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Option<T>> {
         self.tx.subscribe()
-    }
-    /*pub fn add_callback<F>(&self, callback: Box<dyn FnMut(Option<T>)>){
-        let mut rx = self.tx.subscribe();
-        tokio::spawn(async move {
-            while let Ok(received) = rx.recv().await {
-                callback(received);
-            }
-        });
-
-    }*/
+    }    
     pub fn publish(&self, value: T) {
         if let Err(_) = self.tx.send(Some(value)) {
             error!("Channel {} closed !", self.name);
         }
     }
-}
-
-#[async_trait::async_trait]
-pub trait INode 
-where Self: Sized
-{
-    async fn new(name: &str, context: &mut Context) -> Result<Self>;
-    async fn subscribe_to_data(&mut self);
-    async fn task(&mut self);
 }
 
 pub fn synchronize_data<T>(published: &Topic<T>, destination: Arc<Mutex<Option<T>>>)
